@@ -174,7 +174,7 @@ export function EditorRenderer({ serialized, className }: EditorRendererProps) {
         const src = node.src || node?.attrs?.src || "";
         const alt = node.altText || node.alt || "";
 
-        // mx-auto + block => корректно центрируется в text-center и вообще выглядит аккуратнее
+        // Ожидаем, что `src` уже является доступным URL (upload-image возвращает Yandex download href).
         return (
           <img
             key={key}
