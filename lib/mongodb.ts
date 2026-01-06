@@ -15,9 +15,7 @@ if (!cached.client) {
 
 export async function getDb() {
     const client = cached.client as MongoClient;
-    if (!client.isConnected?.()) {
-        await client.connect();
-    }
+    await client.connect();
     return client.db();
 }
 

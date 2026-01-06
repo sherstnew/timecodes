@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { JSX } from 'react';
 
 const FORMAT_BOLD = 1;
 const FORMAT_ITALIC = 2;
