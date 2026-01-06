@@ -20,19 +20,23 @@ export type SerializedImageNode = Spread<
 export class ImageNode extends DecoratorNode<React.JSX.Element> {
   __src: string;
   __altText: string;
+  __preview?: string | null;
 
   static getType(): string {
     return "image";
   }
 
   static clone(node: ImageNode): ImageNode {
-    return new ImageNode(node.__src, node.__altText, node.__key);
+    const n = new ImageNode(node.__src, node.__altText, node.__key);
+    n.__preview = node.__preview;
+    return n;
   }
 
-  constructor(src: string, altText: string, key?: NodeKey) {
+  constructor(src: string, altText: string, key?: NodeKey, preview?: string | null) {
     super(key);
     this.__src = src;
     this.__altText = altText;
+    this.__preview = preview ?? null;
   }
 
   // ОБЯЗАТЕЛЬНЫЙ МЕТОД: Исправляет ошибку "base method not extended"
@@ -67,7 +71,7 @@ export class ImageNode extends DecoratorNode<React.JSX.Element> {
     return (
       <Suspense fallback={null}>
         <img
-          src={this.__src}
+          src={this.__preview || this.__src}
           alt={this.__altText}
           style={{
             maxWidth: "100%",
@@ -81,8 +85,8 @@ export class ImageNode extends DecoratorNode<React.JSX.Element> {
   }
 }
 
-export function $createImageNode(src: string, altText: string): ImageNode {
-  return new ImageNode(src, altText);
+export function $createImageNode(src: string, altText: string, preview?: string | null): ImageNode {
+  return new ImageNode(src, altText, undefined, preview);
 }
 
 export function $isImageNode(node: LexicalNode | null | undefined): node is ImageNode {

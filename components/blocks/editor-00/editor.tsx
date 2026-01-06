@@ -204,11 +204,13 @@ function ToolbarPlugin() {
                         body: formData,
                     });
                     const data = await res.json();
-                    const imageUrl = data.url || data.href;
+                    const storedPath = data.path ?? null;
+                    const previewHref = data.href ?? data.url ?? null;
 
-                    if (imageUrl) {
+                    const srcToUse = storedPath || previewHref;
+                    if (srcToUse) {
                         editor.update(() => {
-                            const imageNode = $createImageNode(imageUrl, file.name);
+                            const imageNode = $createImageNode(storedPath || srcToUse, file.name, previewHref);
                             $insertNodes([imageNode, $createParagraphNode()]);
                         });
                     }

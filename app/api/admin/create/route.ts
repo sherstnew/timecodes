@@ -31,7 +31,6 @@ export async function POST(req: Request) {
         `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${encodeURIComponent(path)}&overwrite=false`,
         { headers: { Authorization: `OAuth ${apiKey}` } }
     );
-    console.log(uploadUrlRes);
     if (!uploadUrlRes.ok) return NextResponse.json({ error: "yandex upload url failed" }, { status: 502 });
 
     const uploadJson = await uploadUrlRes.json();
