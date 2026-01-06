@@ -204,13 +204,19 @@ function ToolbarPlugin() {
                         body: formData,
                     });
                     const data = await res.json();
-                    const storedPath = data.path ?? null;
-                    const previewHref = data.href ?? data.url ?? null;
+                    const storedPath = data?.path ?? null;
+                    const previewHref = data?.href ?? data?.url ?? null;
 
-                    const srcToUse = storedPath || previewHref;
-                    if (srcToUse) {
+                    // Ensure we store the disk path as the node src. Use previewHref only for rendering preview inside editor.
+                    if (storedPath) {
                         editor.update(() => {
-                            const imageNode = $createImageNode(storedPath || srcToUse, file.name, previewHref);
+                            const imageNode = $createImageNode(storedPath, file.name, previewHref || null);
+                            $insertNodes([imageNode, $createParagraphNode()]);
+                        });
+                    } else if (previewHref) {
+                        // Fallback if server didn't return path (legacy)
+                        editor.update(() => {
+                            const imageNode = $createImageNode(previewHref, file.name, null);
                             $insertNodes([imageNode, $createParagraphNode()]);
                         });
                     }

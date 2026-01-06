@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCollection } from "@/lib/mongodb";
+import { fetch, Agent } from "undici";
 
 export const runtime = "nodejs";
+
+// Shared undici agent for Yandex.Disk requests (download links for video/images)
+const yandexAgent = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 60_000 });
 
 export async function GET(req: Request, context: { params: any }) {
     const params = await context.params;
@@ -14,10 +18,10 @@ export async function GET(req: Request, context: { params: any }) {
     const apiKey = process.env.YANDEX_API_KEY;
     let href = null;
     if (apiKey && doc.videoPath) {
-        const dl = await fetch(`https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(doc.videoPath)}`, { headers: { Authorization: `OAuth ${apiKey}` } });
+        const dl = await fetch(`https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(doc.videoPath)}`, { headers: { Authorization: `OAuth ${apiKey}` }, dispatcher: yandexAgent });
         if (dl.ok) {
             try {
-                const j = await dl.json();
+                const j: any = await dl.json();
                 href = j.href || null;
             }
             catch (e) {}
@@ -44,9 +48,9 @@ export async function GET(req: Request, context: { params: any }) {
                             // fetch download link
                             try {
                                 // eslint-disable-next-line no-await-in-loop
-                                const dl = await fetch(`https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(src)}`, { headers: { Authorization: `OAuth ${apiKey}` } });
+                                const dl = await fetch(`https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(src)}`, { headers: { Authorization: `OAuth ${apiKey}` }, dispatcher: yandexAgent });
                                 if (dl.ok) {
-                                    const j = await dl.json().catch(() => ({}));
+                                    const j: any = await dl.json().catch(() => ({}));
                                     const dhref = j.href || null;
                                     if (dhref) node.src = dhref;
                                 }

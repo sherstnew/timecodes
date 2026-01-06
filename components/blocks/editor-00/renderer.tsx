@@ -174,7 +174,8 @@ export function EditorRenderer({ serialized, className }: EditorRendererProps) {
         const src = node.src || node?.attrs?.src || "";
         const alt = node.altText || node.alt || "";
 
-        // Ожидаем, что `src` уже является доступным URL (upload-image возвращает Yandex download href).
+        // `src` может быть либо путь на Яндекс.Диске, либо уже доступный URL.
+        // При отдаче разметки сервер заменяет путь на временную ссылку, если нужно.
         return (
           <img
             key={key}

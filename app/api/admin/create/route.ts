@@ -1,19 +1,33 @@
 import { NextResponse } from "next/server";
 import { getCollection } from "@/lib/mongodb";
 import crypto from "crypto";
+import { fetch, Agent } from "undici";
 
 export const runtime = "nodejs";
 
+// Shared undici agent for long-running requests to Yandex.Disk (large video uploads/downloads)
+const yandexAgent = new Agent({
+    headersTimeout: 0,
+    bodyTimeout: 0,
+    connectTimeout: 60_000,
+});
+
 export async function POST(req: Request) {
     const adminPass = req.headers.get("x-admin-password");
-    if (!process.env.ADMIN_PASSWORD) return NextResponse.json({ error: "Server not configured" }, { status: 500 });
-    if (adminPass !== process.env.ADMIN_PASSWORD) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    if (!process.env.ADMIN_PASSWORD)
+        return NextResponse.json(
+            { error: "Server not configured" },
+            { status: 500 }
+        );
+    if (adminPass !== process.env.ADMIN_PASSWORD)
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
     const form = await req.formData();
     const file = form.get("file") as File | null;
     const metadataRaw = form.get("metadata") as string | null;
 
-    if (!file || !metadataRaw) return NextResponse.json({ error: "missing" }, { status: 400 });
+    if (!file || !metadataRaw)
+        return NextResponse.json({ error: "missing" }, { status: 400 });
 
     const metadata = JSON.parse(metadataRaw as string);
 
@@ -25,27 +39,52 @@ export async function POST(req: Request) {
     const path = `/timecodes/${safeName}`;
 
     const apiKey = process.env.YANDEX_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "yandex not configured" }, { status: 500 });
+    if (!apiKey)
+        return NextResponse.json(
+            { error: "yandex not configured" },
+            { status: 500 }
+        );
 
     const uploadUrlRes = await fetch(
-        `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${encodeURIComponent(path)}&overwrite=false`,
-        { headers: { Authorization: `OAuth ${apiKey}` } }
+        `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${encodeURIComponent(
+            path
+        )}&overwrite=false`,
+        {
+            headers: { Authorization: `OAuth ${apiKey}` },
+            dispatcher: new Agent({
+                headersTimeout: 0,
+                bodyTimeout: 0,
+                connectTimeout: 60_000,
+            }),
+        }
     );
-    if (!uploadUrlRes.ok) return NextResponse.json({ error: "yandex upload url failed" }, { status: 502 });
+    if (!uploadUrlRes.ok)
+        return NextResponse.json(
+            { error: "yandex upload url failed" },
+            { status: 502 }
+        );
 
-    const uploadJson = await uploadUrlRes.json();
+    const uploadJson: any = await uploadUrlRes.json();
     const href = uploadJson.href;
-    if (!href) return NextResponse.json({ error: "no upload href" }, { status: 502 });
+    if (!href)
+        return NextResponse.json({ error: "no upload href" }, { status: 502 });
 
     const arrayBuffer = await file.arrayBuffer();
-    const putRes = await fetch(href, { method: "PUT", body: arrayBuffer });
-    if (!putRes.ok) return NextResponse.json({ error: "upload failed" }, { status: 502 });
+    const putRes = await fetch(href, { method: "PUT", body: arrayBuffer, dispatcher: yandexAgent });
+    if (!putRes.ok)
+        return NextResponse.json({ error: "upload failed" }, { status: 502 });
 
     // attempt to publish so it can be accessed
-    await fetch(`https://cloud-api.yandex.net/v1/disk/resources/publish?path=${encodeURIComponent(path)}`, {
-        method: "PUT",
-        headers: { Authorization: `OAuth ${apiKey}` },
-    }).catch(() => {});
+    await fetch(
+        `https://cloud-api.yandex.net/v1/disk/resources/publish?path=${encodeURIComponent(
+            path
+        )}`,
+        {
+            method: "PUT",
+            headers: { Authorization: `OAuth ${apiKey}` },
+            dispatcher: yandexAgent,
+        }
+    ).catch(() => {});
 
     const coll = await getCollection("markups");
     const doc = {
