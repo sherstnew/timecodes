@@ -27,7 +27,13 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <header className="w-full border-b bg-white">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex gap-4">
+            <a href="/" className="font-medium">Главная</a>
+            <a href="/admin" className="font-medium">Админка</a>
+          </div>
+        </header>
+        <div className="max-w-6xl mx-auto px-4 py-6">{children}</div>
       </body>
     </html>
   );
