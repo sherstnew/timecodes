@@ -42,5 +42,17 @@ export async function POST(req: Request) {
     }).catch(() => {});
 
     // Return only the path on disk. Clients should store this path in DB.
+    // Also try to resolve a download href so editor can preview the image directly from Yandex.Disk
+    try {
+        const dl = await fetch(`https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(pathOnDisk)}`, { headers: { Authorization: `OAuth ${apiKey}` }, dispatcher: yandexAgent });
+        if (dl.ok) {
+            const j: any = await dl.json().catch(() => ({}));
+            const dhref = j.href || null;
+            return NextResponse.json({ ok: true, path: pathOnDisk, href: dhref });
+        }
+    } catch (e) {
+        // ignore
+    }
+
     return NextResponse.json({ ok: true, path: pathOnDisk });
 }

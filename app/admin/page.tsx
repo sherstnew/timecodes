@@ -12,6 +12,7 @@ export default function Admin() {
     const [unlocked, setUnlocked] = useState(false);
     const [password, setPassword] = useState("");
     const [file, setFile] = useState<File | null>(null);
+    const [yandexPath, setYandexPath] = useState<string>("");
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const playerRef = useRef<any>(null);
     const [pending, setPending] = useState(false);
@@ -24,7 +25,7 @@ export default function Admin() {
     const [markups, setMarkups] = useState<Array<{ _id: string; title: string }>>([]);
     const [currentMarkupId, setCurrentMarkupId] = useState<string | null>(null);
 
-    const canSubmit = useMemo(() => !!file && draftTimecodes.length > 0, [file, draftTimecodes]);
+    const canSubmit = useMemo(() => (!!file || !!yandexPath) && draftTimecodes.length > 0, [file, yandexPath, draftTimecodes]);
 
     async function unlock() {
         const res = await fetch("/api/admin/check", { method: "POST", body: JSON.stringify({ password }) });
@@ -36,7 +37,24 @@ export default function Admin() {
     function onSelectFile(e: React.ChangeEvent<HTMLInputElement>) {
         const f = e.target.files?.[0] ?? null;
         setFile(f);
+        setYandexPath("");
         if (f) setPreviewUrl(URL.createObjectURL(f));
+    }
+
+    async function onYandexPathChange(v: string) {
+        setYandexPath(v);
+        setFile(null);
+        setPreviewUrl(null);
+        if (!v) return;
+        try {
+            const res = await fetch("/api/admin/resolve-download", { method: "POST", body: JSON.stringify({ path: v }), headers: { "content-type": "application/json" } });
+            if (!res.ok) return;
+            const j = await res.json();
+            if (j?.href) setPreviewUrl(j.href);
+            else setPreviewUrl(v);
+        } catch (e) {
+            setPreviewUrl(v);
+        }
     }
 
     function onCreateTimecode(time: number) {
@@ -44,17 +62,106 @@ export default function Admin() {
         setEditing(newTc);
     }
 
-    function saveDraft() { if (!editing) return; const filled: Timecode = { ...editing, title, text }; setDraftTimecodes((s) => [...s, filled]); setEditing(null); setTitle(""); setText(""); }
+    function editTimecode(tc: Timecode) {
+        setEditing(tc);
+        setTitle(tc.title || "");
+        setText(tc.text || "");
+    }
+
+    async function resolveSerializedPaths(serializedText: string) {
+        try {
+            const parsed = typeof serializedText === 'string' ? JSON.parse(serializedText) : serializedText;
+            const root = parsed.root ?? parsed;
+            const paths = new Set<string>();
+
+            function walk(node: any) {
+                if (!node) return;
+                if (Array.isArray(node)) return node.forEach(walk);
+                if (typeof node !== 'object') return;
+                if (node.type === 'image') {
+                    const src = node.src || node.attrs?.src || '';
+                    if (typeof src === 'string' && (src.startsWith('/timecodes-images/') || src.startsWith('/uploads/') || src.startsWith('/timecodes/'))) {
+                        paths.add(src);
+                    }
+                }
+                if (node.children && Array.isArray(node.children)) node.children.forEach(walk);
+            }
+
+            walk(root);
+
+            if (paths.size === 0) return serializedText;
+
+            const mapping: Record<string, string> = {};
+            for (const p of Array.from(paths)) {
+                try {
+                    const res = await fetch('/api/admin/resolve-download', { method: 'POST', body: JSON.stringify({ path: p }), headers: { 'content-type': 'application/json' } });
+                    if (!res.ok) continue;
+                    const j = await res.json();
+                    if (j?.href) mapping[p] = j.href;
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            if (Object.keys(mapping).length === 0) return serializedText;
+
+            function replace(node: any) {
+                if (!node) return;
+                if (Array.isArray(node)) return node.forEach(replace);
+                if (typeof node !== 'object') return;
+                if (node.type === 'image') {
+                    const src = node.src || node.attrs?.src || '';
+                    if (mapping[src]) node.src = mapping[src];
+                }
+                if (node.children && Array.isArray(node.children)) node.children.forEach(replace);
+            }
+
+            replace(root);
+            return JSON.stringify(parsed);
+        } catch (e) {
+            return serializedText;
+        }
+    }
+
+    async function saveDraft() {
+        if (!editing) return;
+        const filled: Timecode = { ...editing, title, text };
+        if (filled.text) {
+            try {
+                filled.text = await resolveSerializedPaths(filled.text);
+            } catch (e) {
+                // ignore
+            }
+        }
+        setDraftTimecodes((s) => {
+            const idx = s.findIndex((t) => t._id === filled._id);
+            if (idx >= 0) {
+                const copy = s.slice();
+                copy[idx] = filled;
+                return copy;
+            }
+            return [...s, filled];
+        });
+        setEditing(null);
+        setTitle("");
+        setText("");
+    }
 
     function adjustEnd(delta: number) { if (!editing) return; setEditing({ ...editing, timeEnd: Math.max(0, (editing.timeEnd ?? editing.timeStart) + delta) }); }
 
     function removeTimecode(id: string) { setDraftTimecodes((s) => s.filter((tc) => tc._id !== id)); }
 
     async function submitMarkup() {
-        if (!file) return; setPending(true);
-        const form = new FormData(); form.append("file", file); form.append("metadata", JSON.stringify({ title: markupTitle || file.name, timecodes: draftTimecodes }));
-        const res = await fetch("/api/admin/create", { method: "POST", body: form, headers: { "x-admin-password": password } });
-        setPending(false); if (res.ok) { setFile(null); setPreviewUrl(null); setDraftTimecodes([]); setMarkupTitle(""); await fetchMarkups(); }
+        if (!file && !yandexPath) return; setPending(true);
+        if (file) {
+            const form = new FormData(); form.append("file", file); form.append("metadata", JSON.stringify({ title: markupTitle || file.name, timecodes: draftTimecodes }));
+            const res = await fetch("/api/admin/create", { method: "POST", body: form, headers: { "x-admin-password": password } });
+            setPending(false); if (res.ok) { setFile(null); setPreviewUrl(null); setDraftTimecodes([]); setMarkupTitle(""); setYandexPath(""); await fetchMarkups(); }
+        } else if (yandexPath) {
+            const form = new FormData(); form.append("metadata", JSON.stringify({ title: markupTitle || yandexPath, timecodes: draftTimecodes, videoPath: yandexPath }));
+            const res = await fetch("/api/admin/create", { method: "POST", body: form, headers: { "x-admin-password": password } });
+            setPending(false); if (res.ok) { setFile(null); setPreviewUrl(null); setDraftTimecodes([]); setMarkupTitle(""); setYandexPath(""); await fetchMarkups(); }
+        }
     }
 
     async function fetchMarkups() { try { const res = await fetch("/api/markups"); if (!res.ok) return; const j = await res.json(); setMarkups(j || []); } catch (e) {} }
@@ -90,6 +197,8 @@ export default function Admin() {
                             <h3 className="font-medium mb-2">Видео</h3>
                             <div className="mb-2"><Input placeholder="Название разметки" value={markupTitle} onChange={(e) => setMarkupTitle(e.target.value)} /></div>
                             <Input type="file" accept="video/*" onChange={onSelectFile} />
+                            <div className="mt-2">Или укажите путь на Яндекс.Диске (например /timecodes/xxx):</div>
+                            <Input placeholder="/timecodes/...." value={yandexPath} onChange={(e) => onYandexPathChange(e.target.value)} />
                             <div className="mt-4">{previewUrl && <Player ref={playerRef} src={previewUrl} onCreateTimecode={onCreateTimecode} />}</div>
                         </section>
 
@@ -101,7 +210,10 @@ export default function Admin() {
                                         <div className="font-medium">{tc.title || "(без названия)"}</div>
                                         <div className="flex items-center gap-3">
                                             <div className="text-sm text-muted-foreground">{String(Math.floor(tc.timeStart / 60)).padStart(2, "0")}:{String(Math.floor(tc.timeStart % 60)).padStart(2, "0")} - {String(Math.floor(tc.timeEnd / 60)).padStart(2, "0")}:{String(Math.floor(tc.timeEnd % 60)).padStart(2, "0")}</div>
-                                            <Button variant="ghost" onClick={() => removeTimecode(tc._id)}>Удалить</Button>
+                                            <div className="flex gap-1">
+                                                <Button onClick={() => editTimecode(tc)}>Ред.</Button>
+                                                <Button variant="ghost" onClick={() => removeTimecode(tc._id)}>Удалить</Button>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="mt-2 text-sm text-muted-foreground"><EditorRenderer serialized={tc.text} /></div>
@@ -113,7 +225,7 @@ export default function Admin() {
                                     <div className="flex gap-2 items-center mb-2"><div>Начало: {editing.timeStart}с</div><div className="ml-auto">Конец: {editing.timeEnd}с</div></div>
                                     <div className="flex gap-2 mb-2"><Button onClick={() => adjustEnd(-5)}>-5с</Button><Button onClick={() => adjustEnd(5)}>+5с</Button><Button onClick={() => playerRef.current?.setCurrentTime(editing.timeStart)}>К началу</Button></div>
                                     <div className="mb-2"><Input placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
-                                    <div className="mb-2"><Editor editorState={text ? JSON.parse(text) : undefined} onSerializedChange={(s) => setText(JSON.stringify(s))} /></div>
+                                    <div className="mb-2"><Editor editorSerializedState={text ? JSON.parse(text) : undefined} onSerializedChange={(s) => setText(JSON.stringify(s))} /></div>
                                     <div className="flex gap-2"><Button onClick={saveDraft}>Сохранить</Button><Button variant="ghost" onClick={() => setEditing(null)}>Отмена</Button></div>
                                 </div>
                             )}

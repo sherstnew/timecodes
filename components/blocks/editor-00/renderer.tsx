@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { JSX } from 'react';
 
 const FORMAT_BOLD = 1;
@@ -70,6 +70,53 @@ function parseHeadingLevel(node: any): number {
 
 export function EditorRenderer({ serialized, className }: EditorRendererProps) {
   let obj: any = null;
+
+  const [resolvedMap, setResolvedMap] = useState<Record<string, string>>({});
+
+  // collect local paths that need resolving
+  const pathsToResolve = useMemo(() => {
+    const out = new Set<string>();
+    if (!serialized) return out;
+    try {
+      const parsed = typeof serialized === 'string' ? JSON.parse(serialized) : serialized;
+      const root = parsed.root ?? parsed;
+      function walk(node: any) {
+        if (!node) return;
+        if (Array.isArray(node)) return node.forEach(walk);
+        if (typeof node !== 'object') return;
+        if (node.type === 'image') {
+          const src = node.src || node?.attrs?.src || '';
+          if (typeof src === 'string' && (src.startsWith('/timecodes-images/') || src.startsWith('/uploads/') || src.startsWith('/timecodes/'))) out.add(src);
+        }
+        if (node.children && Array.isArray(node.children)) node.children.forEach(walk);
+      }
+      walk(root);
+    } catch (e) {}
+    return out;
+  }, [serialized]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function resolveAll() {
+      if (!pathsToResolve || pathsToResolve.size === 0) return;
+      const map: Record<string, string> = {};
+      for (const p of Array.from(pathsToResolve)) {
+        if (resolvedMap[p]) {
+          map[p] = resolvedMap[p];
+          continue;
+        }
+        try {
+          const res = await fetch('/api/admin/resolve-download', { method: 'POST', body: JSON.stringify({ path: p }), headers: { 'content-type': 'application/json' } });
+          if (!res.ok) continue;
+          const j = await res.json();
+          if (j?.href) map[p] = j.href;
+        } catch (e) {}
+      }
+      if (mounted && Object.keys(map).length > 0) setResolvedMap((s) => ({ ...s, ...map }));
+    }
+    resolveAll();
+    return () => { mounted = false; };
+  }, [pathsToResolve]);
 
   if (!serialized) return <div className={className} />;
 
@@ -174,12 +221,13 @@ export function EditorRenderer({ serialized, className }: EditorRendererProps) {
         const src = node.src || node?.attrs?.src || "";
         const alt = node.altText || node.alt || "";
 
-        // `src` может быть либо путь на Яндекс.Диске, либо уже доступный URL.
-        // При отдаче разметки сервер заменяет путь на временную ссылку, если нужно.
+        // Если мы резолвили локальный путь — используем href, иначе используем переданный src.
+        const effectiveSrc = (typeof src === 'string' && resolvedMap[src]) ? resolvedMap[src] : src;
+
         return (
           <img
             key={key}
-            src={src}
+            src={effectiveSrc}
             alt={alt}
             className="max-w-full rounded block mx-auto"
             loading="lazy"

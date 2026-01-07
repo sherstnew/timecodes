@@ -2,7 +2,6 @@ import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
 import { ListPlugin } from "@lexical/react/LexicalListPlugin"
 import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin"
-import { AutoFocusPlugin } from "@lexical/react/LexicalAutoFocusPlugin"
 import { ContentEditable } from "@lexical/react/LexicalContentEditable"
 import { MarkdownShortcutPlugin } from "@lexical/react/LexicalMarkdownShortcutPlugin"
 import { TRANSFORMERS } from "@lexical/markdown"
@@ -20,7 +19,6 @@ export function Plugins() {
       <HistoryPlugin />
       <ListPlugin />
       <LinkPlugin />
-      <AutoFocusPlugin />
       <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
     </>
   )

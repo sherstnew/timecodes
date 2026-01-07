@@ -5,8 +5,6 @@ export default async function Home() {
   const coll = await getCollection("markups");
   const items = await coll.find().project({ title: 1 }).toArray();
 
-  console.log(items);
-
   return (
     <main className="w-full h-full p-5">
       <h1 className="text-2xl font-medium mb-4">Разметки</h1>
